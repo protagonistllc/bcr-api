@@ -46,7 +46,7 @@ class BWData:
         return all_mentions
 
     def iter_mentions(
-        self, name=None, startDate=None, max_pages=None, iter_by_page=False, **kwargs
+        self, name=None, startDate=None, max_pages=None, iter_by_page=False, include_meta=False, **kwargs
     ):
         """
         Same as get_mentions function, but returns an iterator. Fetch one page at a time to reduce memory footprint.
@@ -56,6 +56,7 @@ class BWData:
             startDate:     You must pass in a start date (string).
             max_pages:     Maximum number of pages to retrieve, where each page is 5000 mentions by default - Optional.  If you don't pass max_pages, it will retrieve all mentions that match your request.
             iter_by_page:  Enumerate by page when set to True, else by mention, default to False - Optional.
+            include_meta:  Returns a dict with page metadata
             kwargs:        All other filters are optional and can be found in filters.py.
 
         Raises:
@@ -69,15 +70,28 @@ class BWData:
         params["pageSize"] = page_size
         cursor = params.get("cursor", None)
         page_idx = 0
+        prev_cursor = None
 
         while True:
             if cursor:
                 params["cursor"] = cursor
+                prev_cursor = cursor
             if max_pages and page_idx >= max_pages:
                 break
             else:
                 page_idx += 1
-            next_cursor, next_mentions = self._get_mentions_page(params)
+            try:
+                next_cursor, next_mentions = self._get_mentions_page(params)
+            except KeyError as e:
+                if include_meta:
+                    yield self._meta_mentions_response(
+                        cursor=prev_cursor,
+                        error=e
+                    )
+                    page_idx -= 1
+                    continue
+                else:
+                    raise e
             if len(next_mentions) > 0:
                 cursor = next_cursor
                 logger.info(
@@ -86,7 +100,14 @@ class BWData:
                     )
                 )
                 if iter_by_page:
-                    yield next_mentions
+                    if include_meta:
+                        yield self._meta_mentions_response(
+                            cursor=prev_cursor,
+                            next_cursor=next_cursor,
+                            mentions=next_mentions
+                        )
+                    else:
+                        yield next_mentions
                 else:
                     for mention in next_mentions:
                         yield mention
@@ -1005,3 +1026,11 @@ class BWData:
             return all(map(lambda x: x in filters.special_options[param], setting))
         else:
             return True
+
+    def _meta_mentions_response(self, cursor=None, next_cursor=None, mentions=None, error=None):
+        return {
+            "cursor": cursor,
+            "next_cursor": next_cursor,
+            "mentions": mentions or [],
+            "error": error
+        }
