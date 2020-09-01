@@ -82,7 +82,7 @@ class BWData:
                 page_idx += 1
             try:
                 next_cursor, next_mentions = self._get_mentions_page(params)
-            except KeyError as e:
+            except Exception as e:
                 if include_meta:
                     yield self._meta_mentions_response(
                         cursor=prev_cursor,
